@@ -4,7 +4,7 @@ import time
 
 MAX_PAYLOAD_SIZE = 100
 WINDOWS_SIZE = 3
-IFACE = 'Ethernet 2'
+IFACE = 'Ethernet'
 
 class parse_result:
     def __init__(self, send_sequence, p_f, data, fcs):
@@ -21,7 +21,6 @@ class hdlc:
     def __init__(self):
         self.send_sequence = 10
         self.recv_sequence = 3
-        self.in_buffer = []
 
     def send_iframe(self, data):
         frame = self.craft_iframe(data)
@@ -62,20 +61,12 @@ class hdlc:
         return flag + frame + flag
 
     def start_sniffing(self):
-        sniff(iface=IFACE, prn=lambda pck: self.in_buffer.append(pck))
-        return
+        sniff(iface=IFACE, prn=self.packet_filter, filter="ether proto 0x88B6")
 
-    def packet_handler(self):
-        while (True):
-            if (self.in_buffer.count == 0):
-                time.sleep(0.5)
-                continue
-
-            packet = self.in_buffer.pop(0)
-
-            packet_parse_result: parse_result = self.parse_packet(
-                bytes(packet[Raw]))
-
+    def packet_filter(self, packet):
+        if Ether in packet and packet[Ether].src == "fc:34:97:69:7f:d9":
+            packet_parse_result: parse_result = self.parse_packet(packet)
+            
             if (packet_parse_result.send_sequence != self.recv_sequence):
                 # handle error
                 print("Error")
@@ -88,26 +79,29 @@ class hdlc:
             if (self.recv_sequence % WINDOWS_SIZE):
                 self.send_sframe()
 
-    def parse_packet(bytes):
-        res = parse_result()
+            time.sleep(500)
 
-        bytes_count = len(bytes)
+    def parse_packet(self, packet):
+        res = parse_result(0,False,None,None)
 
-        control_int = int.from_bytes(bytes[1])
+        raw_data = bytes(packet[Raw]).rstrip(b'\x00')
+
+        bytes_count = len(raw_data)
+
+        control_int = raw_data[1]
         res.send_sequence = ((control_int & 0b01110000) >> 4)
         res.p_f = ((control_int & 0b00001000) > 0)
 
-        res.data = bytes[2:bytes_count - 3]
+        res.data = raw_data[3:bytes_count - 3]
+        res.fcs = raw_data[bytes_count - 3: bytes_count - 1]
 
-        res.fcs = bytes_count[bytes_count - 3: bytes_count - 1]
-
+        print(res.p_f)
         return res
 
 
 hh = hdlc()
 
-hh.send_iframe("sex")
-
+hh.start_sniffing()
 
 # eth_packet = Ether(src="fc:34:97:69:7f:d9",dst="2c:4d:54:38:33:dc")
 
