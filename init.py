@@ -14,7 +14,7 @@ class parse_result:
         self.fcs = fcs
 
 
-eth_packet = Ether(src="fc:34:97:69:7f:d9", dst="2c:4d:54:38:33:dc")
+eth_packet = Ether(src="fc:34:97:69:7f:d9", dst="2c:4d:54:38:33:dc", type=0x88B6)
 
 
 class hdlc:
@@ -56,8 +56,7 @@ class hdlc:
             frame = address + \
                 control.to_bytes(1, 'big') + crc(control.to_bytes(1, 'big') + b'\x00\x00').to_bytes(2, 'big')
         else:
-            frame = address + \
-                control.to_bytes(1, 'big') + data.encode() + crc(control.to_bytes(1, 'big') + data.encode() + b'\x00\x00').to_bytes(2, 'big')
+            frame = address + control.to_bytes(1, 'big') + data.encode() + crc(control.to_bytes(1, 'big') + data.encode() + b'\x00\x00').to_bytes(2, 'big')
 
         return flag + frame + flag
 
@@ -106,8 +105,7 @@ class hdlc:
 
 hh = hdlc()
 
-hh.send_iframe("sex")
-
+hh.send_iframe("I'm trasmitting data for real dude")
 
 # eth_packet = Ether(src="fc:34:97:69:7f:d9",dst="2c:4d:54:38:33:dc")
 
