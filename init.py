@@ -1,8 +1,9 @@
 from scapy.all import *
 import crcmod
 import time
+import threading
 
-MAX_PAYLOAD_SIZE = 100
+MAX_PAYLOAD_SIZE = 3
 WINDOWS_SIZE = 3
 IFACE = "Ethernet"
 
@@ -16,7 +17,7 @@ class parse_result:
         self.fcs = fcs
 
 
-eth_packet = Ether(src="fc:34:97:69:7f:d9", dst="2c:4d:54:38:33:dc", type=0x88B6)
+eth_packet = Ether(src="2c:4d:54:38:33:dc", dst="fc:34:97:69:7f:d9", type=0x88B6)
 
 class hdlc:
     def __init__(self):
@@ -28,9 +29,9 @@ class hdlc:
         while True:
             data = stream.read(MAX_PAYLOAD_SIZE)
 
-            if self.send_sequence % WINDOWS_SIZE:
+            if self.send_sequence > 0 and self.send_sequence % WINDOWS_SIZE == 0:
                 while True:
-                    if self.in_buffer.count() == 0:
+                    if len(self.in_buffer) == 0:
                         time.sleep(0.5)
                         continue
 
@@ -40,11 +41,11 @@ class hdlc:
                     if self.send_sequence == packet_parse_result.recv_sequence:
                         break
 
-            self.send_iframe(data)
-            self.send_sequence += 1
-
             if not data:
                 break
+
+            self.send_iframe(data)
+            self.send_sequence += 1
 
     def send_iframe(self, data):
         frame = self.craft_iframe(data)
@@ -84,28 +85,33 @@ class hdlc:
         return flag + frame + flag
 
     def start_sniffing_async(self):
-        ass = AsyncSniffer(iface=IFACE, prn=lambda pck: self.in_buffer.append(pck), filter="ether proto 0x88B6")
+        ass = AsyncSniffer(iface=IFACE, prn=self.enqueue_packet, filter="ether proto 0x88B6")
         ass.start()
 
     def start_sniffing(self):
-        sniff(iface=IFACE, prn=self.packet_handler, filter="ether proto 0x88B6")
+        sniff(iface=IFACE, prn=self.receiver, filter="ether proto 0x88B6")
+        # threading.Thread(target=lambda: sniff(iface=IFACE, prn=lambda pck:self.in_buffer.append(pck), filter="ether proto 0x88B6")1).start()
 
-    def packet_handler(self, packet):
+    def enqueue_packet(self, packet):
+        self.in_buffer.append(packet)
+
+    def receiver(self,packet):
+        if packet[Ether].src != "fc:34:97:69:7f:d9":
+            return
+
         packet_parse_result: parse_result = self.parse_packet(packet, "I")
 
-        if packet_parse_result.send_sequence != self.recv_sequence:
+        if packet_parse_result.send_sequence != (self.recv_sequence & 0b00000111):
             # handle error
             print("Error")
             return
-
+        
         print(packet_parse_result.data.decode())
 
         self.recv_sequence += 1
 
-        if self.recv_sequence % WINDOWS_SIZE == 0:
-            self.send_sframe()
-
-        time.sleep(500)
+        if self.recv_sequence > 0 and self.recv_sequence % WINDOWS_SIZE == 0:
+            self.send_sframe()    
 
     def parse_packet(self, packet, type):
         res = parse_result(0, 0, False, None, None)
@@ -132,3 +138,4 @@ class hdlc:
 hh = hdlc()
 
 hh.start_sniffing()
+hh.receiver()
