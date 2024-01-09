@@ -32,13 +32,12 @@ class hdlc:
             if self.send_sequence > 0 and self.send_sequence % WINDOWS_SIZE == 0:
                 while True:
                     if len(self.in_buffer) == 0:
-                        time.sleep(0.5)
                         continue
 
                     packet = self.in_buffer.pop(0)
-                    packet_parse_result = self.parse_packet(packet, "S")
+                    packet_parse_result = self.parse_packet(packet)
 
-                    if self.send_sequence == packet_parse_result.recv_sequence:
+                    if (self.send_sequence & 0b00000111) == packet_parse_result.recv_sequence:
                         break
 
             if not data:
@@ -85,8 +84,14 @@ class hdlc:
         return flag + frame + flag
 
     def start_sniffing_async(self):
-        ass = AsyncSniffer(iface=IFACE, prn=lambda pck: self.in_buffer.append(pck), filter="ether proto 0x88B6")
+        ass = AsyncSniffer(iface=IFACE, prn=self.enqeue_packet, filter="ether proto 0x88B6")
         ass.start()
+
+    def enqeue_packet(self, packet):
+        if (packet[Ether].src == "fc:34:97:69:7f:d9"):
+            return
+        
+        self.in_buffer.append(packet)
 
     def receiver(self):
         while True:
@@ -111,24 +116,26 @@ class hdlc:
 
             time.sleep(500)
 
-    def parse_packet(self, packet, type):
+    def parse_packet(self, packet):
         res = parse_result(0, 0, False, None, None)
 
         raw_data = bytes(packet[Raw]).rstrip(b"\x00")
 
         bytes_count = len(raw_data)
 
-        control_int = raw_data[1]
+        control_int = raw_data[2]
+
+        type = (control_int & 0b10000000) > 0 
 
         res.p_f = (control_int & 0b00001000) > 0
 
-        if type == "I":
+        if type:
+            res.recv_sequence = control_int & 0b00000111
+            res.fcs = raw_data[3 : bytes_count - 1]
+        else:
             res.send_sequence = (control_int & 0b01110000) >> 4
             res.data = raw_data[3 : bytes_count - 3]
             res.fcs = raw_data[bytes_count - 3 : bytes_count - 1]
-        else:
-            res.recv_sequence = control_int & 0b00000111
-            res.fcs = raw_data[3 : bytes_count - 1]
 
         return res
 
