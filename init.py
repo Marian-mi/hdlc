@@ -1,10 +1,11 @@
 from scapy.all import *
 import crcmod
 import time
+import threading
 
 MAX_PAYLOAD_SIZE = 3
 WINDOWS_SIZE = 3
-IFACE = "Ethernet 2"
+IFACE = "Ethernet"
 
 
 class parse_result:
@@ -16,8 +17,7 @@ class parse_result:
         self.fcs = fcs
 
 
-eth_packet = Ether(src="fc:34:97:69:7f:d9", dst="2c:4d:54:38:33:dc", type=0x88B6)
-
+eth_packet = Ether(src="2c:4d:54:38:33:dc", dst="fc:34:97:69:7f:d9", type=0x88B6)
 
 class hdlc:
     def __init__(self):
@@ -93,28 +93,30 @@ class hdlc:
         
         self.in_buffer.append(packet)
 
-    def receiver(self):
-        while True:
-            if len(self.in_buffer) == 0:
-                continue
+    def start_sniffing(self):
+        sniff(iface=IFACE, prn=self.receiver, filter="ether proto 0x88B6")
+        # threading.Thread(target=lambda: sniff(iface=IFACE, prn=lambda pck:self.in_buffer.append(pck), filter="ether proto 0x88B6")1).start()
 
-            packet = self.in_buffer.pop(0)
+    def enqueue_packet(self, packet):
+        self.in_buffer.append(packet)
 
-            packet_parse_result: parse_result = self.parse_packet(packet)
+    def receiver(self,packet):
+        if packet[Ether].src != "fc:34:97:69:7f:d9":
+            return
 
-            if packet_parse_result.send_sequence != self.recv_sequence:
-                # handle error
-                print("Error")
-                return
+        packet_parse_result: parse_result = self.parse_packet(packet, "I")
 
-            print(packet_parse_result.data.decode())
+        if packet_parse_result.send_sequence != (self.recv_sequence & 0b00000111):
+            # handle error
+            print("Error")
+            return
+        
+        print(packet_parse_result.data.decode())
 
-            self.recv_sequence += 1
+        self.recv_sequence += 1
 
-            if self.recv_sequence % WINDOWS_SIZE:
-                self.send_sframe()
-
-            time.sleep(500)
+        if self.recv_sequence > 0 and self.recv_sequence % WINDOWS_SIZE == 0:
+            self.send_sframe()    
 
     def parse_packet(self, packet):
         res = parse_result(0, 0, False, None, None)
@@ -142,7 +144,5 @@ class hdlc:
 
 hh = hdlc()
 
-hh.start_sniffing_async()
-
-with open("sm.txt") as file:
-    hh.send_stream(file)
+hh.start_sniffing()
+hh.receiver()
