@@ -4,7 +4,7 @@ import time
 
 MAX_PAYLOAD_SIZE = 100
 WINDOWS_SIZE = 3
-IFACE = "Ethernet 2"
+IFACE = "Ethernet"
 
 
 class parse_result:
@@ -20,8 +20,8 @@ eth_packet = Ether(src="fc:34:97:69:7f:d9", dst="2c:4d:54:38:33:dc", type=0x88B6
 
 class hdlc:
     def __init__(self):
-        self.send_sequence = 10
-        self.recv_sequence = 3
+        self.send_sequence = 0
+        self.recv_sequence = 0
         self.in_buffer = []
 
     def send_stream(self, stream: io.TextIOWrapper):
@@ -91,7 +91,7 @@ class hdlc:
         sniff(iface=IFACE, prn=self.packet_handler, filter="ether proto 0x88B6")
 
     def packet_handler(self, packet):
-        packet_parse_result: parse_result = self.parse_packet(packet)
+        packet_parse_result: parse_result = self.parse_packet(packet, "I")
 
         if packet_parse_result.send_sequence != self.recv_sequence:
             # handle error
@@ -102,7 +102,7 @@ class hdlc:
 
         self.recv_sequence += 1
 
-        if self.recv_sequence % WINDOWS_SIZE:
+        if self.recv_sequence % WINDOWS_SIZE == 0:
             self.send_sframe()
 
         time.sleep(500)
@@ -114,7 +114,7 @@ class hdlc:
 
         bytes_count = len(raw_data)
 
-        control_int = raw_data[1]
+        control_int = raw_data[2]
 
         res.p_f = (control_int & 0b00001000) > 0
 
@@ -131,7 +131,4 @@ class hdlc:
 
 hh = hdlc()
 
-hh.start_sniffing_async()
-
-with open("sm.txt") as file:
-    hh.send_stream(file)
+hh.start_sniffing()
