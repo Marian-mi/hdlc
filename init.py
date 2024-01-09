@@ -2,7 +2,7 @@ from scapy.all import *
 import crcmod
 import time
 
-MAX_PAYLOAD_SIZE = 100
+MAX_PAYLOAD_SIZE = 3
 WINDOWS_SIZE = 3
 IFACE = "Ethernet 2"
 
@@ -18,19 +18,20 @@ class parse_result:
 
 eth_packet = Ether(src="fc:34:97:69:7f:d9", dst="2c:4d:54:38:33:dc", type=0x88B6)
 
+
 class hdlc:
     def __init__(self):
-        self.send_sequence = 10
-        self.recv_sequence = 3
+        self.send_sequence = 0
+        self.recv_sequence = 0
         self.in_buffer = []
 
     def send_stream(self, stream: io.TextIOWrapper):
         while True:
             data = stream.read(MAX_PAYLOAD_SIZE)
 
-            if self.send_sequence % WINDOWS_SIZE:
+            if self.send_sequence > 0 and self.send_sequence % WINDOWS_SIZE == 0:
                 while True:
-                    if self.in_buffer.count() == 0:
+                    if len(self.in_buffer) == 0:
                         time.sleep(0.5)
                         continue
 
@@ -40,11 +41,11 @@ class hdlc:
                     if self.send_sequence == packet_parse_result.recv_sequence:
                         break
 
-            self.send_iframe(data)
-            self.send_sequence += 1
-
             if not data:
                 break
+
+            self.send_iframe(data)
+            self.send_sequence += 1
 
     def send_iframe(self, data):
         frame = self.craft_iframe(data)
@@ -87,25 +88,28 @@ class hdlc:
         ass = AsyncSniffer(iface=IFACE, prn=lambda pck: self.in_buffer.append(pck), filter="ether proto 0x88B6")
         ass.start()
 
-    def start_sniffing(self):
-        sniff(iface=IFACE, prn=self.packet_handler, filter="ether proto 0x88B6")
+    def receiver(self):
+        while True:
+            if len(self.in_buffer) == 0:
+                continue
 
-    def packet_handler(self, packet):
-        packet_parse_result: parse_result = self.parse_packet(packet)
+            packet = self.in_buffer.pop(0)
 
-        if packet_parse_result.send_sequence != self.recv_sequence:
-            # handle error
-            print("Error")
-            return
+            packet_parse_result: parse_result = self.parse_packet(packet)
 
-        print(packet_parse_result.data.decode())
+            if packet_parse_result.send_sequence != self.recv_sequence:
+                # handle error
+                print("Error")
+                return
 
-        self.recv_sequence += 1
+            print(packet_parse_result.data.decode())
 
-        if self.recv_sequence % WINDOWS_SIZE:
-            self.send_sframe()
+            self.recv_sequence += 1
 
-        time.sleep(500)
+            if self.recv_sequence % WINDOWS_SIZE:
+                self.send_sframe()
+
+            time.sleep(500)
 
     def parse_packet(self, packet, type):
         res = parse_result(0, 0, False, None, None)
