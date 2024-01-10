@@ -19,6 +19,13 @@ class parse_result:
 
 eth_packet = Ether(src="2c:4d:54:38:33:dc", dst="fc:34:97:69:7f:d9", type=0x88B6)
 
+# the hdlc class is used by both the send and the receiver
+# senders use the `send_stream` method which crafts I-frames and send them over the wire
+# senders may also invoke the `start_sniffing_async` method to receive the acknowledgements
+#
+# receievers invoke the `start_sniffing` method method, which synchronously listens for incoming packets
+# the packets are then processed by the `receiver` method
+
 class hdlc:
     def __init__(self):
         self.send_sequence = 0
